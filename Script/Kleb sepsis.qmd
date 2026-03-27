@@ -1,0 +1,367 @@
+---
+title: "Sepsis analysis among Kleb cases"
+format: html
+---
+
+
+```{r}
+#| label: load libraries
+#| message: false
+#| warning: false
+#| error: false
+
+#devtools::install_github("davidsjoberg/ggsankey")
+
+#library(lessR)
+library(ggthemes)
+library(ggpubr)
+library(DataExplorer)
+library(labelled)
+#library(dlookr)
+library(SmartEDA)
+library(gtsummary)
+library(gt)
+library(DT)
+library(fontawesome)
+library(naniar)
+library(janitor)
+library(ggstatsplot)
+library(sjPlot)
+library(flextable)
+library(here)
+library(lubridate)
+library(gridExtra)
+library(ggsankey)
+library(ggExtra)
+library(UpSetR)
+library(treemapify)
+library(DiagrammeR)
+library(ggdist)
+library(PupillometryR)
+library(ggforce)
+library(ggthemes)
+library(ggrepel)
+library(webr)
+library(ggbeeswarm)
+library(ggtext)
+library(quantreg)
+library(ggstance)
+library(ggbump)
+library(tidytext)
+library(patchwork) # --- Include
+library(tidyverse)
+library(excel.link)
+library(anthro)
+library(readxl)
+
+#themes: journal,sandstone, flatly, yeti, united, pulse, lumen, -- Minty,Sketchy, Quartz
+#devtools::install_github("davidsjoberg/ggsankey")
+#devtools::install_github("OnduruFred/CleanEasy")
+```
+
+```{r}
+# ------ CHAMPS DATA
+Champs <- readRDS(
+  "C:/Users/user/OneDrive - Kenya Medical Research Institute/Work Related/Work related - CHAMPS/Champs cleaning codes/Final data/All_Champs data-.rds"
+) %>%
+  drop_na(champs_id) %>%
+  distinct(champs_id, .keep_all = T) %>%
+  mutate(
+    Residence = case_when(
+      catchment_id == "Kisumu/Manyatta" ~ "Manyatta",
+      catchment_id == "Siaya/Karemo" ~ "Karemo"
+    ),
+    report_death_location_1 = if_else(
+      report_death_location %in% c("Health Center", "Health Post", "Hospital"),
+      "Health Facility deaths",
+      "Community deaths"
+    ),
+    report_note_dt = ymd(report_note_dt)
+  ) |>
+  drop_na(report_note_dt) %>%
+  mutate(
+    agecat1 = fct_collapse(
+      agecat,
+      "Stillbirth" = "Stillbirth",
+      "Neonate" = c(
+        "Death in the first 24 hours of life",
+        "1 to 6 days old",
+        "7 to 27 days old"
+      ),
+      "Infant" = c("28 days old to less than 12 months old"),
+      "Child" = c("12 months old to less than 60 months old")
+    ) %>%
+      fct_relevel(., "Stillbirth", "Neonate", "Infant", "Child")
+  ) %>%
+  filter(report_note_dt >= "2017-01-01" & report_note_dt <= "2025-12-31") %>% # "2021-01-01"
+  mutate(
+    blood_cult = case_when(
+      str_detect(bld_result_ch00603, "(?i)Present") ~ "Positive",
+      str_detect(bld_result_ch00603, "(?i)Absent") ~ "Negative",
+      TRUE ~ "Not done"
+    ),
+    csf_cult = case_when(
+      str_detect(csf_result_ch00603, "(?i)Present") ~ "Positive",
+      str_detect(csf_result_ch00603, "(?i)Absent|No growth") ~ "Negative",
+      TRUE ~ "Not done"
+    )
+  ) %>%
+  mutate(
+    bld_org1 = coalesce(bld_orgother_ch00603_1, bld_orgcode_ch00603_1),
+    bld_org2 = coalesce(bld_orgother_ch00603_2, bld_orgcode_ch00603_2),
+    bld_org3 = coalesce(bld_orgother_ch00603_3, bld_orgcode_ch00603_3),
+    bld_org4 = coalesce(bld_orgother_ch00603_4, bld_orgcode_ch00603_4),
+    bld_org5 = coalesce(bld_orgother_ch00603_5, bld_orgcode_ch00603_5),
+    bld_sub_org1 = coalesce(bld_orgother_ch00604_1, bld_orgcode_ch00604_1),
+    bld_sub_org2 = coalesce(bld_orgother_ch00604_2, bld_orgcode_ch00604_2),
+    bld_sub_org3 = coalesce(bld_orgother_ch00604_3, bld_orgcode_ch00604_3),
+    bld_sub_org4 = coalesce(bld_orgother_ch00604_4, bld_orgcode_ch00604_4),
+    bld_sub_org5 = coalesce(bld_orgother_ch00604_5, bld_orgcode_ch00604_5),
+    bld_organism1 = coalesce(bld_org1, bld_sub_org1),
+    bld_organism2 = coalesce(bld_org2, bld_sub_org2),
+    bld_organism3 = coalesce(bld_org3, bld_sub_org3),
+    bld_organism4 = coalesce(bld_org4, bld_sub_org4),
+    bld_organism5 = coalesce(bld_org5, bld_sub_org5),
+  )
+```
+
+```{r}
+Champs_kleb <- Champs %>%
+  filter(str_detect(TAC_pathogens, "(?i)kleb")) %>%
+  mutate(
+    sepsis = if_else(str_detect(decode_conditions, "(?i)sepsis"), "Yes", "No")
+  ) %>%
+  drop_na(sepsis) # %>%
+select(
+  champs_id,
+  TAC_pathogens,
+  TAC_test_result,
+  decode_conditions,
+  sepsis
+)
+```
+
+
+### Table 1. Characteristics of Stillbirths and Deaths Enrolled in the Study
+```{r}
+#| label: tbl-sck_tab1
+#| column: page-inset-right
+
+Tabl1_dt <-
+  Champs_kleb %>%
+  mutate_at(
+    vars(
+      ga_child_wks,
+      ga_maternal_wks,
+      ga_child_months,
+      bw_child,
+      ga_child_wks,
+      bw_maternal,
+      bw_child,
+      weight_kg
+    ),
+    ~ as.numeric(.x)
+  ) %>%
+  mutate(
+    `GA at delivery` = coalesce(
+      ga_child_wks,
+      ga_maternal_wks,
+      ga_child_months * 7
+    ),
+    weight_gram = weight_kg * 1000,
+    weight_gram_cat = case_when(
+      weight_gram < 1000 ~ "<1,000",
+      between(weight_gram, 1000, 1499) ~ "1,000 - <1,500",
+      between(weight_gram, 1500, 2499) ~ "1,500 - <2,500",
+      between(weight_gram, 2500, 3999) ~ "2,500 - <4,000",
+      weight_gram >= 4000 ~ "4,000+",
+    ),
+    birth_weight = coalesce(bw_maternal, bw_child),
+    birth_status = case_when(
+      birth_weight < 1500 ~ "Very low birth weight (<1.5 kg)",
+      birth_weight >= 1500 & birth_weight < 2500 ~
+        "Low birth weight (1.5-2.5 kg)",
+      birth_weight >= 2500 ~ "Birth weight >2.5kg",
+      .default = NA_character_
+    ),
+    # aget_cat2 = replace(as.character(aget_cat2), aget_cat2 == "Neonates", "Early Neonates")
+    hos72 = case_when(
+      hos72 == 1 ~ "Hospitalized >=72 hours",
+      hos72 == 0 ~ "Hospitalized <72 hours",
+      calc_location == "community" ~ "Not hospitalized/community death",
+      TRUE ~ NA_character_
+    ),
+    HIV_result = replace(
+      HIV_result,
+      HIV_result %in% c("Indeterminate", "Not tested"),
+      NA
+    ),
+    HIV_Result_mother = if_else(
+      ma05_hiv_rslt == "Positive" |
+        ma05_hiv_hist == "Yes" |
+        main_maternal_champs_group_desc == "HIV" |
+        dp_120_1 == "HIV disease/infection" |
+        dp_121_1 == "HIV disease/infection" |
+        dp_122_1 == "HIV disease/infection" |
+        dp_123_1 == "HIV disease/infection",
+      "Positive",
+      "Negative"
+    ),
+    HIV_status = case_when(
+      HIV_result == "Negative" &
+        HIV_Result_mother %in% c("Negative", NA) ~ "HIV-unexposed",
+      HIV_Result_mother == "Positive" &
+        HIV_result == "Negative" ~ "HIV-exposed uninfected",
+      HIV_result == "Positive" ~ "HIV-infected",
+      is.na(HIV_result) ~ "Unknown"
+    )
+  ) %>%
+  mutate(
+    Underweight = if_else(calc_waz < -2, 1, 0),
+    Stunted = if_else(calc_haz < -2, 1, 0),
+    Wasted = if_else(calc_whz < -2, 1, 0),
+
+    # malnutrition in the causal chain
+    malnutrition_ic = if_else(
+      str_detect(str_to_lower(ic_champs_group_desc), "malnutr"),
+      1,
+      0
+    ),
+    malnutrition_uc = if_else(
+      str_detect(str_to_lower(uc_champs_group_desc), "malnutr"),
+      1,
+      0
+    ),
+    maln_morbid1 = if_else(
+      str_detect(str_to_lower(morbid_cond_01_champs_group_desc), "malnutr"),
+      1,
+      0
+    ),
+
+    maln_morbid2 = if_else(
+      str_detect(str_to_lower(morbid_cond_02_champs_group_desc), "malnutr"),
+      1,
+      0
+    ),
+    Manutr_causal = if_else(
+      malnutrition_ic == 1 |
+        malnutrition_uc == 1 |
+        maln_morbid1 == 1 |
+        maln_morbid2 == 1,
+      1,
+      0
+    ),
+    Manutr_causal = replace(Manutr_causal, is.na(Manutr_causal), 0),
+  ) %>%
+  select(
+    champs_id,
+    sepsis,
+    report_sex,
+    calc_sex,
+    Residence,
+    calc_location,
+    mode_of_delivery,
+    birth_status,
+    weight_gram_cat,
+    `GA at delivery`,
+    agecat,
+    hos72,
+    HIV_status,
+    sickle_cell_type,
+    Underweight,
+    Stunted,
+    Wasted,
+    Manutr_causal,
+    #any_infect,
+    #Infect_pathogen
+    #immunization
+  )
+```
+
+##  Table 1
+```{r}
+
+##  Column percentage
+# *********************
+Tabl1_dt %>%
+  select(-c(champs_id, report_sex, sepsis)) %>%
+  mutate_if(
+    is.character,
+    ~ replace(
+      .x,
+      .x %in% c("Sex unknown", "Indeterminate", "Unknown or Unavailable"),
+      NA
+    )
+  ) %>%
+  droplevels() %>%
+  tbl_summary(
+    missing = "no",
+    label = list(
+      calc_sex ~ "Sex",
+      calc_location ~ "Death location",
+      birth_status = "Birth weight",
+      weight_gram_cat = "Weight at MITs",
+      hos72 = "Hospitalization >=72 hours",
+      sickle_cell_type ~ "Sickle Cell type",
+      Manutr_causal ~ "Malnutrition in causal chain"
+      #any_infect ~ "Infectious status"
+      #Infect_pathogen ~ "Infectious pathogen"
+    ),
+    digits = everything() ~ c(0, 1)
+  ) %>%
+  add_overall() %>%
+  add_n() %>%
+  add_stat_label() %>%
+  as_gt() %>%
+  opt_vertical_padding(scale = 0.6) %>%
+  sub_values(replacement = "", values = c("0 (0.0%)")) %>%
+  sub_values(replacement = "", pattern = "(100.0%)")
+```
+
+##  Table 2
+```{r}
+
+##  Column percentage
+# *********************
+Tabl1_dt %>%
+  select(-c(champs_id, report_sex)) %>%
+  mutate_if(
+    is.character,
+    ~ replace(
+      .x,
+      .x %in% c("Sex unknown", "Indeterminate", "Unknown or Unavailable"),
+      NA
+    )
+  ) %>%
+  droplevels() %>%
+  mutate(sepsis = fct_rev(sepsis)) %>%
+  tbl_summary(
+    by = sepsis,
+    missing = "no",
+    label = list(
+      calc_sex ~ "Sex",
+      calc_location ~ "Death location",
+      birth_status = "Birth weight",
+      weight_gram_cat = "Weight at MITs",
+      hos72 = "Hospitalization >=72 hours",
+      sickle_cell_type ~ "Sickle Cell type",
+      Manutr_causal ~ "Malnutrition in causal chain"
+      #any_infect ~ "Infectious status"
+      #Infect_pathogen ~ "Infectious pathogen"
+    ),
+    digits = everything() ~ c(0, 1),
+    percent = "row"
+  ) %>%
+  modify_spanning_header(all_stat_cols() ~ "**Sepsis in COD**") %>%
+  add_n() %>%
+  add_p() %>%
+  add_stat_label() %>%
+  modify_header(
+    all_stat_cols() ~ "**{level}**, N = {n} ({style_percent(p,digits = 1)}%)"
+  ) %>%
+  as_gt() %>%
+  opt_vertical_padding(scale = 0.6) %>%
+  sub_values(replacement = "", values = c("0 (0.0%)")) %>%
+  sub_values(replacement = "", pattern = "(100.0%)")
+```
+
