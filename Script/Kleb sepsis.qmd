@@ -316,6 +316,7 @@ Tabl1_dt %>%
   opt_vertical_padding(scale = 0.6) %>%
   sub_values(replacement = "", values = c("0 (0.0%)")) %>%
   sub_values(replacement = "", pattern = "(100.0%)")
+
 ```
 
 ##  Table 2
