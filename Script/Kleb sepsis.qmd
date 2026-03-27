@@ -366,3 +366,6 @@ Tabl1_dt %>%
   sub_values(replacement = "", pattern = "(100.0%)")
 ```
 
+
+
+
