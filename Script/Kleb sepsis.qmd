@@ -131,14 +131,7 @@ Champs_kleb <- Champs %>%
   mutate(
     sepsis = if_else(str_detect(decode_conditions, "(?i)sepsis"), "Yes", "No")
   ) %>%
-  drop_na(sepsis) # %>%
-select(
-  champs_id,
-  TAC_pathogens,
-  TAC_test_result,
-  decode_conditions,
-  sepsis
-)
+  drop_na(sepsis)
 ```
 
 
@@ -367,5 +360,125 @@ Tabl1_dt %>%
 ```
 
 
+```{r}
 
+```
+
+
+
+
+```{r}
+#         Etiologies Identified
+#    ``````````````````````````````````
+ful_etiol_df <-
+  Champs %>%
+  filter(complete.cases(champs_id)) %>%
+  mutate(across(
+    ends_with("_etiol1") |
+      ends_with("_etiol2") |
+      ends_with("_etiol3"),
+    ~ coalesce(
+      get(paste0(cur_column(), "_othr")),
+      .
+    ),
+    .names = "{.col}"
+  )) %>%
+  select(champs_id, agecat1, agecat, contains("etiol")) %>%
+  select(-contains("othr")) %>%
+  remove_empty(which = "cols") %>%
+  pivot_longer(
+    names_to = "type",
+    values_to = "etiology",
+    cols = -c(champs_id, agecat1, agecat),
+    values_drop_na = TRUE
+  ) %>%
+  mutate(
+    etiology = str_to_sentence(str_squish(etiology)),
+    etiology = if_else(
+      str_detect(etiology, "(?i)HIV|Human Immunodeficiency Virus"),
+      "HIV",
+      etiology
+    ),
+    etiology = if_else(
+      str_detect(
+        etiology,
+        "(?i)Citrobacter feundii|Citrobacter freundii"
+      ),
+      "Citrobacter freundi",
+      etiology
+    )
+  ) %>%
+  mutate(
+    etiology = replace(
+      etiology,
+      str_detect(etiology, "(?i)Coagulase"),
+      "Coagulase Negative Staphylococcus"
+    ),
+    category_etiol = case_when(
+      str_detect(
+        etiology,
+        regex(
+          "virus|covid|hiv|cmv|norovirus|rota|sapovirus|parainfluenza|influenza |metapneumovirus|adenovirus|parvovirus|respiratory syncytial",
+          ignore_case = TRUE
+        )
+      ) ~
+        "Virus",
+      str_detect(
+        etiology,
+        regex("candida|yeast|fungi|pneumocystis", ignore_case = TRUE)
+      ) ~
+        "Fungi",
+      str_detect(etiology, regex("ascaris|Plasmodium", ignore_case = TRUE)) ~
+        "Parasite",
+      str_detect(
+        etiology,
+        regex(
+          "acinetobacter|aeromonas|pertussis|bordetella|campylobacter|chlamydia|citrobacter|staphylococcus|enterobacter|enterococcus|escherichia|coli|shigella|haemophilus|klebsiella|moraxella|mycobacterium|proteus|pseudomonas|raoultella|salmonella|serratia|streptococcus|treponema|ureaplasma|haemophilus influenzae",
+          ignore_case = TRUE
+        )
+      ) ~
+        "Bacteria",
+      str_detect(
+        etiology,
+        regex("idiopathic|unknown|plant|other", ignore_case = TRUE)
+      ) ~
+        NA_character_,
+      TRUE ~ NA_character_,
+    )
+  ) %>%
+  drop_na(category_etiol) %>%
+  distinct(champs_id, etiology, .keep_all = TRUE)
+
+etiol_cat_wide_form <-
+  ful_etiol_df %>%
+  distinct(champs_id, category_etiol, .keep_all = TRUE) %>%
+  select(champs_id, category_etiol) %>%
+  mutate(present = 1) %>%
+  pivot_wider(
+    names_from = category_etiol,
+    values_from = present,
+    values_fill = 0
+  ) %>%
+  mutate(Infect_pathogen = 1)
+```
+
+
+ ```{r}
+ful_etiol_df %>%
+  filter(str_detect(etiology, "(?i)Kleb")) %>%
+  distinct(champs_id, .keep_all = T) %>%
+  nrow()
+ ```
+
+
+ ```{r}
+Champs %>%
+  filter(str_detect(TAC_pathogens, "(?i)kleb")) %>%
+  nrow()
+mutate(
+  sepsis = if_else(str_detect(decode_conditions, "(?i)sepsis"), "Yes", "No")
+) %>%
+  drop_na(sepsis) %>%
+  tabyl(sepsis)
+ ```
 
