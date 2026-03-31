@@ -127,15 +127,52 @@ Champs <- readRDS(
 
 ```{r}
 Champs_kleb <- Champs %>%
-  filter(str_detect(TAC_pathogens, "(?i)kleb")) %>%
+  filter(str_detect(decode_etiology, "(?i)kleb")) %>%
   mutate(
     sepsis = if_else(str_detect(decode_conditions, "(?i)sepsis"), "Yes", "No")
   ) %>%
   drop_na(sepsis)
+
 ```
 
+### Preliminary analysis of Klebsiella presence in COD among sepsis vs non-sepsis cases 
+```{r}
+#| label: tbl-sck_tab1_prelim
+#| column: page-inset-right
 
-### Table 1. Characteristics of Stillbirths and Deaths Enrolled in the Study
+Champs %>%
+  mutate(
+    sepsis = if_else(str_detect(decode_conditions, "(?i)sepsis"), "Yes", "No"),
+    kleb = if_else(
+      str_detect(decode_etiology, "(?i)kleb"),
+      "Klebsiella",
+      "Other etiologies"
+    )
+  ) %>%
+  drop_na(sepsis) %>%
+  select(kleb, sepsis) %>%
+  tbl_summary(
+    by = sepsis,
+    missing = "no",
+    label = list(kleb ~ "Klebsiella presence in COD"),
+    digits = everything() ~ c(0, 1),
+    percent = "row"
+  ) %>%
+  modify_spanning_header(all_stat_cols() ~ "**Sepsis in COD**") %>%
+  add_n() %>%
+  add_p() %>%
+  add_stat_label() %>%
+  modify_header(
+    all_stat_cols() ~ "**{level}**, N = {n} ({style_percent(p,digits = 1)}%)"
+  ) %>%
+  add_overall() %>%
+  as_gt() %>%
+  opt_vertical_padding(scale = 0.6) %>%
+  sub_values(replacement = "", values = c("0 (0.0%)")) %>%
+  sub_values(replacement = "", pattern = "(100.0%)")
+```
+
+### Table 1. Characteristics of  Deaths Enrolled in the Study
 ```{r}
 #| label: tbl-sck_tab1
 #| column: page-inset-right
